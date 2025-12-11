@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Luxe Store - Premium Data Bundles & More</title>
+
+    <!-- MTN label spacing fix -->
+    <style>
+    .bundle-card div {
+        display: flex;        /* container for MTN + GB becomes flex row */
+        align-items: center;  /* vertically center them */
+        gap: 20px;            /* space between MTN label and GB number */
+    }
+    .network-label {
+        color: #ffcd00;
+        font-weight: 700;
+    }
+    </style>
+
+    <!-- Firebase and other scripts -->
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+    <script src="https://js.paystack.co/v1/inline.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+</head>
+
+    <style>
+        :root {
+            --primary: #6366f1;
+            --secondary: #8b5cf6;
+            --accent: #06b6d4;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --shadow: 0 20px 25px -5px rgba(0,0,0,0.1);
+            /* FIX 6: Add light mode variables for text/background contrast */
+            --light-text-card: #1e293b; 
+        }
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border: #334155;
+            --light-text-card: #f1f5f9; /* In dark mode, card text remains light */
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; transition: all 0.3s ease; -webkit-font-smoothing:antialiased; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 0 20px; }
+
+        /* FIX 1: Sidebar Mobile Alignment */
+        .sidebar { position: fixed; left: 0; top: 0; height: 100vh; width: 280px; background: var(--card); border-right: 1px solid var(--border); transform: translateX(-100%); transition: 0.28s ease; z-index: 1000; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+        .sidebar.active { transform: translateX(0); }
+        .sidebar-header { padding: 1.5rem; border-bottom: 1px solid var(--border); display:flex; align-items:center; gap:12px; }
+        .logo { font-size: 1.6rem; font-weight: 800; background: linear-gradient(135deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-list { list-style: none; padding: 0.5rem 0 2rem 0; }
+        .nav-item { padding: 0.9rem 1.2rem; cursor: pointer; transition: 0.18s; border-left: 4px solid transparent; display:flex; align-items:center; gap:10px; font-weight:600; border-radius:8px; margin:6px; }
+        .nav-item:hover, .nav-item.active { background: var(--primary); color: white; border-left-color: var(--accent); }
+        .nav-item i { margin-right: 0.5rem; width: 20px; text-align:center; }
+
+        /* FIX 5: Full screen overlay for closing */
+        .overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.5); z-index: 999; opacity: 0; visibility: hidden; transition: 0.3s; }
+        .overlay.active { opacity: 1; visibility: visible; }
+
+        /* Main Content */
+        .main-content { margin-left: 0; padding: 1rem 0 6rem 0; transition: 0.3s; min-height: 100vh; }
+        /* Removed margin-left: 280px on desktop when sidebar is active to avoid jumpy behaviour */
+
+        /* Header */
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 0.9rem 0; background: var(--card); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 120; }
+        .menu-toggle { background: none; border: none; font-size: 1.45rem; color: var(--text); cursor: pointer; padding: 0.5rem; border-radius:10px; }
+        .header-right { display: flex; align-items: center; gap: 0.8rem; }
+        .theme-toggle, .notif-btn, .cart-btn { background: var(--primary); color: white; border: none; padding: 0.6rem; border-radius: 10px; min-width:44px; min-height:44px; display:flex; align-items:center; justify-content:center; cursor: pointer; transition: 0.18s; box-shadow: var(--shadow); }
+        .theme-toggle i, .notif-btn i, .cart-btn i { font-size: 1rem; }
+        .cart-count { position: absolute; top: -6px; right: -6px; background: var(--accent); color: white; border-radius: 50%; width: 20px; height: 20px; font-size: 0.72rem; display: flex; align-items: center; justify-content: center; font-weight:700; }
+        .auth-btns button { background: var(--primary); color: white; border: none; padding: 0.6rem 1rem; border-radius: 50px; cursor: pointer; font-weight: 600; transition: 0.2s; font-size:0.92rem; }
+        .auth-btns button:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
+
+        /* FIX 3 & 4: Mobile sticky bottom action bar (Only Cart action remains) */
+        .bottom-actions { display:none; position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--border); padding: 0.5rem 1rem; z-index: 1200; justify-content: center; align-items:center; gap:20px; }
+        .bottom-actions button { flex:1; max-width: 200px; padding: 0.9rem; border-radius:12px; display:flex; align-items:center; justify-content:center; gap:8px; font-weight:700; background: var(--primary); color: white; border: none; }
+        .bottom-actions button.btn-ghost { background: var(--bg); color: var(--text); border: 1px solid var(--border); } /* Styling remaining buttons */
+        
+        /* Hero */
+        .hero { text-align: center; padding: 2.2rem 1rem; background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; border-radius: 16px; margin-bottom: 1.8rem; }
+        .hero h1 { font-size: clamp(1.8rem, 4.2vw, 2.6rem); font-weight: 900; margin-bottom: 0.5rem; }
+        .hero p { font-size: 1rem; opacity: 0.95; margin-bottom: 1rem; }
+
+        /* Sections */
+        .section { display: grid; gap: 1.2rem; margin-bottom: 1.4rem; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+        .card { background: var(--card); padding: 1.25rem; border-radius: 12px; box-shadow: var(--shadow); border: 1px solid var(--border); transition: 0.2s; position: relative; }
+        .card:hover { transform: translateY(-6px); box-shadow: 0 25px 45px -12px rgba(0,0,0,0.12); }
+        .coming-soon { text-align: center; padding: 2rem; background: var(--bg); color: var(--text-muted); }
+
+        /* Data Bundles */
+        .network-tabs { display: flex; gap: 0.6rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .network-btn { flex: 1; min-width: 110px; padding: 0.7rem 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; cursor: pointer; transition: 0.15s; font-weight: 700; font-size:0.95rem; color: var(--text); } /* FIX 6: Ensure text color is set */
+        .network-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .bundle-card { display: flex; justify-content: space-between; align-items: center; padding: 0.9rem; background: var(--bg); border-radius: 12px; margin-bottom: 0.6rem; transition: 0.12s; }
+        .bundle-card:hover { transform: scale(1.01); }
+        .bundle-price { font-size: 1rem; font-weight: 900; color: var(--primary); }
+        .add-cart { background: var(--accent); color: white; border: none; padding: 0.55rem 0.9rem; border-radius: 12px; cursor: pointer; font-weight: 800; transition: 0.12s; min-width:110px; }
+        .network-label { position: absolute; top: 1rem; left: 1rem; background: var(--primary); color: white; padding: 0.2rem 0.55rem; border-radius: 12px; font-size: 0.72rem; font-weight: 700; }
+        /* FIX 2 (Original): Style for the GB label */
+        .data-label { display: inline-block; background: #6b7280; color: white; padding: 2px 6px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; margin-left: 8px; }
+
+        /* Notification (toasts) */
+        .toast-wrap { position: fixed; right: 16px; bottom: 80px; z-index: 2200; display:flex; flex-direction:column; gap:8px; }
+        .toast { min-width: 220px; max-width: 360px; padding: 0.9rem 1rem; border-radius: 10px; color: white; box-shadow: var(--shadow); display:flex; gap:12px; align-items:flex-start; }
+        .toast.info { background: linear-gradient(90deg,#06b6d4,#0ea5e9); }
+        .toast.success { background: linear-gradient(90deg,#10b981,#059669); }
+        .toast.warn { background: linear-gradient(90deg,#f59e0b,#d97706); }
+        .toast .t-close { margin-left:auto; background:none; border:none; color:rgba(255,255,255,0.9); font-weight:700; cursor:pointer; }
+
+        /* Notification box (large) */
+        .notification { position: fixed; top: 84px; right: 20px; background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 1rem 1.2rem; border-radius: 12px; box-shadow: var(--shadow); max-width: 400px; transform: translateX(400px); transition: 0.3s; z-index: 2000; border-left: 5px solid #dc2626; }
+        .notification.active { transform: translateX(0); }
+        .notification h4 { margin-bottom: 0.5rem; display:flex; align-items:center; gap:8px; }
+        .notification ul { margin-left: 1rem; margin-bottom: 0.75rem; }
+        .close-notif { background: none; border: none; color: white; font-size: 1.2rem; cursor: pointer; float: right; }
+
+        /* Cart Modal / Drawer */
+        .cart-modal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.45); z-index: 3000; opacity: 0; visibility: hidden; transition: 0.2s; }
+        .cart-modal.active { opacity: 1; visibility: visible; }
+        .cart-content { position: absolute; right: 0; width: 420px; height: 100vh; background: var(--card); transform: translateX(100%); transition: 0.22s; box-shadow: -30px 0 60px rgba(0,0,0,0.06); }
+        .cart-modal.active .cart-content { transform: translateX(0); }
+        .cart-header { padding: 1.25rem; border-bottom: 1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
+        .cart-item { display:flex; gap:0.8rem; padding: 0.9rem 1rem; border-bottom:1px solid var(--border); align-items:center; }
+        .cart-total { padding: 1rem; border-top: 2px solid var(--primary); position:absolute; bottom:0; left:0; right:0; background:var(--card); }
+        .checkout-btn { width:100%; padding: 0.85rem; background: var(--primary); color: white; border: none; border-radius: 12px; font-size: 1rem; font-weight: 700; cursor:pointer; }
+
+        /* Auth Modal */
+        .auth-modal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.45); z-index: 2500; opacity: 0; visibility: hidden; transition: 0.22s; }
+        .auth-modal.active { opacity: 1; visibility: visible; }
+        .auth-content { position:absolute; top:50%; left:50%; transform: translate(-50%,-50%) scale(0.9); background:var(--card); padding: 1.4rem; border-radius: 12px; width: 92%; max-width: 420px; transition:0.18s; box-shadow: var(--shadow); }
+        .auth-modal.active .auth-content { transform: translate(-50%,-50%) scale(1); }
+
+        /* Dashboard Tabs */
+        .dashboard-tabs { display:flex; gap:0.6rem; justify-content:center; margin-top:0.8rem; }
+        .tab-btn { padding: 0.6rem 1rem; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; cursor:pointer; font-weight:700; font-size:0.95rem; color: var(--text); } /* FIX 6: Ensure text color is set */
+        .tab-btn.active { background: var(--primary); color:white; border-color: var(--primary); }
+
+        /* Responsive */
+        @media (min-width: 901px) {
+            /* Maintain sidebar margin-left for desktop when active */
+            .sidebar.active ~ .main-content { margin-left: 280px; }
+        }
+        @media (max-width: 900px) {
+            /* FIX 1: Max-width fixed for better alignment */
+            .sidebar { width: 90%; max-width: 300px; }
+            .cart-content { width: 90%; max-width: 420px; } /* Improved cart size on medium mobile */
+        }
+        @media (max-width: 768px) {
+            /* FIX 1: Mobile grid for better alignment */
+            .grid { grid-template-columns: 1fr; }
+            .network-tabs { flex-direction: row; overflow-x: auto; gap:8px; padding-bottom:4px; justify-content: flex-start; }
+            .network-btn { flex: 0 0 auto; } /* Prevent buttons from stretching wide */
+            .bottom-actions { display:flex; }
+            .header .auth-btns { display:none; }
+            .hero { padding:1.6rem 1rem; }
+            .cart-content { width: 100%; max-width: 420px; }
+            .notification { right: 8px; left: auto; top: 70px; }
+            /* FIX 1: Center the notification button within the header-right */
+            .header-right { align-items: center; } 
+            .menu-toggle { margin-left: 0; }
+        }
+
+        /* Animations */
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .card, .hero { animation: fadeInUp 0.45s ease; }
+
+        /* small helpers */
+        .muted { color: var(--text-muted); font-size:0.95rem; }
+        .btn-ghost { background:transparent; border:1px solid var(--border); padding:0.5rem 0.8rem; border-radius:10px; cursor:pointer; }
+        
+        /* FIX 6: Fix text color for certain elements in light mode */
+        /* For text that resides in primary colored backgrounds (like auth buttons in the header) */
+        .auth-btns button, .theme-toggle, .notif-btn, .cart-btn {
+             color: white !important;
+        }
+
+        /* For text within a standard card/button when in light mode */
+        body:not([data-theme="dark"]) .btn-ghost, 
+        body:not([data-theme="dark"]) .tab-btn,
+        body:not([data-theme="dark"]) .network-btn {
+            color: var(--light-text-card);
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">Luxe Store</div>
+        </div>
+        <ul class="nav-list">
+            <li class="nav-item active" data-section="home"><i class="fas fa-home"></i>Home</li>
+            <li class="nav-item" data-section="data"><i class="fas fa-wifi"></i>Data Bundles</li>
+            <li class="nav-item" data-section="electronics"><i class="fas fa-laptop"></i>Electronics</li>
+            <li class="nav-item" data-section="fashion"><i class="fas fa-tshirt"></i>Fashion</li>
+            <li class="nav-item" data-section="transactions"><i class="fas fa-history"></i>Transactions</li>
+            <li class="nav-item" data-section="transactions"><i class="fas fa-shopping-bag"></i>Orders</li> <li class="nav-item" data-section="contacts"><i class="fas fa-phone"></i>Contacts</li>
+            <li class="nav-item" data-section="about"><i class="fas fa-info-circle"></i>About</li>
+        </ul>
+    </div>
+
+    <div class="overlay" id="overlay"></div>
+
+    <div class="main-content">
+        <header class="header container">
+            <button class="menu-toggle" id="menuToggle">
+                <i class="fas fa-bars"></i>
+            </button>
+            <div class="header-right">
+                <button class="notif-btn" id="notifBtn" title="Notifications">
+                    <i class="fas fa-bell"></i>
+                </button>
+
+                <button class="cart-btn" id="cartBtn" title="Cart" style="position:relative;">
+                    <i class="fas fa-shopping-cart"></i>
+                    <span class="cart-count" id="cartCount" style="display: none;">0</span>
+                </button>
+
+                <button class="theme-toggle" id="themeToggle" title="Toggle Theme">
+                    <i class="fas fa-moon"></i>
+                </button>
+
+                <div class="auth-btns" id="authBtns">
+                    <button id="loginBtn">Login</button>
+                    <button id="signupBtn">Sign Up</button>
+                </div>
+
+                <div class="user-profile" id="userProfile" style="display: none;">
+                    <button id="logoutBtn" class="theme-toggle" title="Logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="notification" id="notification" aria-hidden="true">
+            <button class="close-notif" id="closeNotif">&times;</button>
+            <h4><i class="fas fa-exclamation-triangle"></i>⚠️ IMPORTANT NOTICE</h4>
+            <ul>
+                <li>Turbonet/Merchant/Broadband numbers don't support these data bundles.</li>
+                <li>Delivery of data bundle is between 30min to 1hr.</li>
+                <li>For numbers with airtime or any debt: 50/50% chance bundle will deliver.</li>
+            </ul>
+            <p><strong>For urgent bundles, dial *138#</strong></p>
+        </div>
+
+        <div class="toast-wrap" id="toastWrap" aria-hidden="true"></div>
+
+        <main class="container">
+            <section id="home" class="section active">
+                <div class="hero">
+                    <h1>Welcome to Luxe Store</h1>
+                    <p>Premium Data Bundles, Electronics & Fashion. Fast, Secure & Reliable.</p>
+                    <div class="dashboard-tabs">
+                        <button class="tab-btn active" data-tab="data">Data Bundles</button>
+                        <button class="tab-btn" data-tab="electronics">Electronics</button>
+                        <button class="tab-btn" data-tab="fashion">Fashion</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="data" class="section" style="display: none;">
+                <h2 style="font-size: 1.6rem; margin-bottom: 0.8rem; text-align: center;">Data Bundles</h2>
+                <div class="network-tabs" id="networkTabs">
+                    <button class="network-btn active" data-network="mtn">MTN</button>
+                    <button class="network-btn" data-network="telecel">TELECEL</button>
+                    <button class="network-btn" data-network="airteltigo">AIRTEL TIGO</button>
+                </div>
+                <div class="grid" id="bundleGrid">
+                    </div>
+            </section>
+
+            <section id="electronics" class="section" style="display: none;">
+                <div class="grid">
+                    <div class="card coming-soon">
+                        <i class="fas fa-rocket" style="font-size:28px;"></i>
+                        <h3 style="font-size: 1.2rem; margin: 0.6rem 0;">Electronics Coming Soon!</h3>
+                        <p class="muted">Premium gadgets and electronics arriving soon. Stay tuned!</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="fashion" class="section" style="display: none;">
+                <div class="grid">
+                    <div class="card coming-soon">
+                        <i class="fas fa-star" style="font-size:28px;"></i>
+                        <h3 style="font-size: 1.2rem; margin: 0.6rem 0;">Fashion Coming Soon!</h3>
+                        <p class="muted">Trendy fashion collection launching shortly. Get ready!</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="transactions" class="section" style="display: none;">
+                <h2 style="font-size: 1.5rem; margin-bottom: 0.8rem; text-align: center;">Transaction & Order History</h2>
+                <div id="transactionsList" class="grid"></div>
+            </section>
+
+            <section id="orders" class="section" style="display: none;">
+                <h2 style="font-size: 1.5rem; margin-bottom: 0.8rem; text-align: center;">Your Orders</h2>
+                <div id="ordersList" class="grid"></div>
+            </section>
+
+            <section id="contacts" class="section" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <h3><i class="fas fa-phone"></i> Contact Us</h3>
+                        <p>Email: <a href="mailto:jbellingham771@gmail.com">jbellingham771@gmail.com</a></p>
+                        <p>WhatsApp: <a id="waLink" href="https://wa.me/233548164533?text=Hi%20Luxe%20Store%20Support%2C%20I%20need%20help" target="_blank" rel="noopener">Chat on WhatsApp +233 548 164 533</a></p>
+                        <p class="muted">Available 24/7 via WhatsApp and Email.</p>
+                    </div>
+                    <div class="card">
+                        <h3><i class="fas fa-map-marker-alt"></i> Location</h3>
+                        <p>Accra, Ghana</p>
+                        <p class="muted">24/7 Customer Support</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="about" class="section" style="display: none;">
+                <div class="grid">
+                    <div class="card">
+                        <h3>About Luxe Store</h3>
+                        <p>Your premium destination for data bundles, electronics, and fashion. Fast delivery, secure payments, and excellent customer service.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div class="bottom-actions" id="bottomActions" aria-hidden="true">
+        <button id="bottomCart"><i class="fas fa-shopping-cart"></i> Cart <span id="bottomCartCount" style="margin-left:8px; font-weight:800;"></span></button>
+    </div>
+
+    <div class="cart-modal" id="cartModal">
+        <div class="cart-content" role="dialog" aria-modal="true">
+            <div class="cart-header">
+                <h3>Shopping Cart (<span id="modalCartCount">0</span>)</h3>
+                <button class="theme-toggle" id="closeCart">×</button>
+            </div>
+            <div id="cartItems" style="padding: 1rem; max-height: 64vh; overflow-y: auto;"></div>
+            <div class="cart-total">
+                <div style="display:flex; justify-content:space-between; font-size:1.05rem; margin-bottom:0.6rem;">
+                    <span>Total:</span>
+                    <span id="cartTotal">GH₵ 0.00</span>
+                </div>
+                <button class="checkout-btn" id="checkoutBtn" style="display:none;">Proceed to Checkout</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="auth-modal" id="authModal">
+        <div class="auth-content">
+            <h3 id="authTitle">Login</h3>
+            <form id="authForm">
+                <div style="margin-bottom: 1rem;">
+                    <input type="email" id="email" placeholder="Email" required style="width: 100%; padding: 0.9rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem;">
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <input type="password" id="password" placeholder="Password" required style="width: 100%; padding: 0.9rem; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem;">
+                </div>
+                <button type="submit" style="width: 100%; padding: 0.9rem; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;">Continue</button>
+            </form>
+            <div style="text-align: center; margin-top: 0.8rem;">
+                <button id="toggleAuth" style="background: none; border: none; color: var(--primary); cursor: pointer;">Need an account? Sign up</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --------------------------
+        // Firebase Config (unchanged)
+        // --------------------------
+        const firebaseConfig = {
+            apiKey: "AIzaSyBd_6xPr8I_lipGbzOQ3pcYBF-dggXbiEU",
+            authDomain: "boss-luxe-6c9a8.firebaseapp.com",
+            projectId: "boss-luxe-6c9a8",
+            storageBucket: "boss-luxe-6c9a8.firebasestorage.app",
+            messagingSenderId: "152048842414",
+            appId: "1:152048842414:web:e82fd4b44a604b20679f3f"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // --------------------------
+        // State & Data
+        // --------------------------
+        let cart = []; // {size, price, network, quantity, timestamp, uidLocalId}
+        let currentUser = null;
+        let currentNetwork = 'mtn';
+        // FIX 1: Added GB sizes to the bundles object
+        const bundles = { '1GB': 5.50, '2GB': 12, '3GB': 18, '4GB': 25, '5GB': 29, '6GB': 36, '10GB': 55 };
+
+        // DOM
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('overlay');
+        const menuToggle = document.getElementById('menuToggle');
+        const sections = document.querySelectorAll('.section');
+        const navItems = document.querySelectorAll('.nav-item');
+        const cartBtn = document.getElementById('cartBtn');
+        const cartModal = document.getElementById('cartModal');
+        const cartCount = document.getElementById('cartCount');
+        const themeToggle = document.getElementById('themeToggle');
+        const notifBtn = document.getElementById('notifBtn');
+        const notification = document.getElementById('notification');
+        const networkBtnsContainer = document.getElementById('networkTabs');
+        const bundleGrid = document.getElementById('bundleGrid');
+        const authModal = document.getElementById('authModal');
+        const loginBtn = document.getElementById('loginBtn');
+        const signupBtn = document.getElementById('signupBtn');
+        const authBtns = document.getElementById('authBtns');
+        const userProfile = document.getElementById('userProfile');
+
+        // UI small mobile buttons
+        const bottomActions = document.getElementById('bottomActions');
+        const bottomCart = document.getElementById('bottomCart');
+        const bottomCartCount = document.getElementById('bottomCartCount');
+
+        // localTransactions stored in localStorage to track add-to-cart and local purchase events
+        function getLocalTransactions() {
+            try { return JSON.parse(localStorage.getItem('localTransactions') || '[]'); } catch(e){ return []; }
+        }
+        function saveLocalTransactions(txns) {
+            localStorage.setItem('localTransactions', JSON.stringify(txns || []));
+        }
+
+        // Persist cart to localStorage
+        function loadCartFromStorage() {
+            try {
+                cart = JSON.parse(localStorage.getItem('cart') || '[]');
+            } catch(e) {
+                cart = [];
+            }
+        }
+        function saveCartToStorage() {
+            localStorage.setItem('cart', JSON.stringify(cart));
+        }
+
+        // Utility: push in-app toast notifications
+        function pushToast(message, type='info', timeout=3500) {
+            const wrap = document.getElementById('toastWrap');
+            const id = 't'+Date.now();
+            const el = document.createElement('div');
+            el.className = 'toast '+ (type==='success' ? 'success' : (type==='warn' ? 'warn' : 'info'));
+            el.id = id;
+            el.innerHTML = `<div style="font-size:18px; margin-top:2px;"><i class="${ type==='success' ? 'fas fa-check-circle' : (type==='warn' ? 'fas fa-exclamation-triangle' : 'fas fa-info-circle') }"></i></div>
+                            <div style="flex:1;">
+                              <div style="font-weight:800; margin-bottom:6px;">${ type==='success' ? 'Success' : (type==='warn' ? 'Notice' : 'Info') }</div>
+                              <div style="font-size:0.95rem;">${message}</div>
+                            </div>
+                            <button class="t-close" onclick="document.getElementById('${id}').remove()">×</button>`;
+            wrap.appendChild(el);
+            setTimeout(()=> { if(document.getElementById(id)) document.getElementById(id).remove(); }, timeout);
+        }
+
+        // --------- Init on DOM load ----------
+        document.addEventListener('DOMContentLoaded', function() {
+            initTheme();
+            loadCartFromStorage();
+            loadBundles();
+            setupAuth();
+            updateCartUI();
+            loadTransactions(); // will show local txns even if not logged
+            setupEvents();
+            // show bottom actions on mobile
+            if (window.innerWidth <= 768) bottomActions.style.display = 'flex';
+        });
+
+        // ------------- Events --------------
+        function setupEvents() {
+            menuToggle.addEventListener('click', toggleSidebar);
+            // FIX 5: Use overlay to close sidebar
+            overlay.addEventListener('click', closeSidebar); 
+            // FIX 5: Add click listener to the left part of the screen when sidebar is open (handled by overlay)
+
+            navItems.forEach(item => item.addEventListener('click', handleNavClick));
+            cartBtn.addEventListener('click', toggleCart);
+            themeToggle.addEventListener('click', toggleTheme);
+            notifBtn.addEventListener('click', toggleNotification);
+            document.getElementById('closeCart').addEventListener('click', toggleCart);
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.addEventListener('click', handleTabClick));
+            document.getElementById('checkoutBtn').addEventListener('click', startCheckout);
+            document.getElementById('closeNotif').addEventListener('click', toggleNotification);
+
+            // bottom action handlers (FIX 3 & 4: Only cart remains)
+            bottomCart.addEventListener('click', () => { toggleCart(); });
+
+            // clicks outside auth modal to close
+            document.addEventListener('click', function(e) {
+                if (e.target === authModal) authModal.classList.remove('active');
+            });
+        }
+
+        // Navigation helpers
+        function toggleSidebar() {
+            sidebar.classList.toggle('active');
+            overlay.classList.toggle('active');
+        }
+        function closeSidebar() {
+            sidebar.classList.remove('active');
+            overlay.classList.remove('active');
+        }
+        function handleNavClick(e) {
+            const section = e.currentTarget.dataset.section;
+            // The logic for "Orders" is now handled by redirecting to "Transactions"
+            showSection(section);
+            navItems.forEach(item => item.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            closeSidebar();
+        }
+        function showSection(sectionId) {
+            sections.forEach(s => s.style.display = 'none');
+            sections.forEach(s => s.classList.remove('active'));
+            const elm = document.getElementById(sectionId);
+            if (elm) {
+                elm.style.display = 'block';
+                elm.classList.add('active');
+            }
+        }
+        function handleTabClick(e) {
+            const tab = e.currentTarget.dataset.tab;
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            showSection(tab);
+        }
+
+        // Theme
+        function initTheme() {
+            const saved = localStorage.getItem('theme');
+            if (saved === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+            } else {
+                // FIX 6: Default to light mode (no attribute) but ensure icon is moon
+                document.documentElement.removeAttribute('data-theme');
+                themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+            }
+        }
+        function toggleTheme() {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            if (isDark) {
+                document.documentElement.removeAttribute('data-theme');
+                themeToggle.innerHTML = '<i class="fas fa-moon"></i>';
+                localStorage.setItem('theme', 'light');
+            } else {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                themeToggle.innerHTML = '<i class="fas fa-sun"></i>';
+                localStorage.setItem('theme', 'dark');
+            }
+        }
+
+        // ------------------------------
+        // Bundles rendering + network
+        // ------------------------------
+        function loadBundles() {
+            // initially draw for MTN
+            renderBundlesForNetwork(currentNetwork);
+            // attach event delegation for network buttons
+            networkBtnsContainer.addEventListener('click', function(e) {
+                const btn = e.target.closest('.network-btn');
+                if (!btn) return;
+                handleNetworkChange({ currentTarget: btn });
+            });
+
+            // ensure network buttons behave like before by direct hooking
+            document.querySelectorAll('.network-btn').forEach(btn => {
+                btn.addEventListener('click', (ev) => handleNetworkChange({ currentTarget: btn }));
+            });
+        }
+
+        function handleNetworkChange(e) {
+            currentNetwork = e.currentTarget.dataset.network;
+            document.querySelectorAll('.network-btn').forEach(b => b.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            renderBundlesForNetwork(currentNetwork);
+        }
+
+        // show bundles only for MTN; TELECEL & AIRTEL TIGO show coming soon per your request
+        function renderBundlesForNetwork(network) {
+            bundleGrid.innerHTML = '';
+            if (network === 'mtn') {
+                Object.entries(bundles).forEach(([size, price]) => {
+                    // FIX 1: Added the data-label span next to MTN
+                    const card = document.createElement('div');
+                    card.className = 'card bundle-card';
+                    card.innerHTML = `
+                        <div style="flex: 1;">
+                            <span class="network-label" id="network-${size.toLowerCase().replace('gb','')}">MTN</span>
+                            <span class="data-label">${size}</span>
+                            <h4 style="margin:6px 0;">Data Bundle</h4>
+                            <div class="bundle-price">GH₵ ${price.toFixed(2)}</div>
+                        </div>
+                        <button class="add-cart" data-size="${size}" data-price="${price}">
+                            <i class="fas fa-cart-plus"></i> Add to Cart
+                        </button>
+                    `;
+                    bundleGrid.appendChild(card);
+                });
+
+                // attach add-to-cart listeners (delegation)
+                bundleGrid.querySelectorAll('.add-cart').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        const size = e.currentTarget.dataset.size;
+                        const price = Number(e.currentTarget.dataset.price);
+                        addToCart(size, price);
+                    });
+                });
+
+            } else {
+                // clear products for telecel and airteltigo, show Coming Soon
+                const coming = document.createElement('div');
+                coming.className = 'card coming-soon';
+                coming.innerHTML = `<i class="fas fa-clock" style="font-size:28px;"></i>
+                                    <h3 style="font-size:1.1rem; margin:8px 0;">${network.toUpperCase()} Bundles - Coming Soon!</h3>
+                                    <p class="muted">We're working to add ${network.toUpperCase()} bundles. Check back soon!</p>`;
+                bundleGrid.appendChild(coming);
+            }
+        }
+
+        // ------------------------
+        // Cart handling & tracking
+        // ------------------------
+
+        // addToCart now tracks every addition (even if user not logged in), persists cart and adds a local transaction record
+        function addToCart(size, price) {
+            // create a local uid for each cart item for tracking
+            const uidLocalId = 'c' + Date.now() + Math.floor(Math.random()*99);
+
+            // find existing same item (size+network)
+            const existing = cart.find(c => c.size === size && c.network === currentNetwork);
+            if (existing) {
+                existing.quantity = (existing.quantity || 1) + 1;
+                existing.updatedAt = new Date().toISOString();
+            } else {
+                const item = { size, price, network: currentNetwork, quantity: 1, addedAt: new Date().toISOString(), uidLocalId };
+                cart.push(item);
+            }
+            saveCartToStorage();
+            updateCartUI();
+            renderCartItems();
+
+            // save a local transaction record for "added to cart"
+            const localTxns = getLocalTransactions();
+            localTxns.unshift({
+                id: 'ltx_' + Date.now(),
+                type: 'added',
+                status: 'in_cart',
+                item: { size, price, network: currentNetwork, quantity: 1 },
+                timestamp: new Date().toISOString()
+            });
+            saveLocalTransactions(localTxns);
+            loadTransactions(); // refresh UI
+
+            // show a toast and small notification
+            pushToast(`${size} (${currentNetwork.toUpperCase()}) added to cart`, 'info', 3000);
+        }
+
+        function updateCartUI() {
+            const totalItems = cart.reduce((sum, item) => sum + (item.quantity || 1), 0);
+            const totalPrice = cart.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
+
+            cartCount.textContent = totalItems;
+            cartCount.style.display = totalItems > 0 ? 'flex' : 'none';
+            document.getElementById('modalCartCount').textContent = totalItems;
+            document.getElementById('cartTotal').textContent = `GH₵ ${totalPrice.toFixed(2)}`;
+            document.getElementById('checkoutBtn').style.display = totalItems > 0 ? 'block' : 'none';
+
+            // also update bottom cart count for mobile
+            bottomCartCount.textContent = totalItems > 0 ? `(${totalItems})` : '';
+        }
+
+        function toggleCart() {
+            cartModal.classList.toggle('active');
+            if (cartModal.classList.contains('active')) {
+                renderCartItems();
+            }
+        }
+
+        function renderCartItems() {
+            const container = document.getElementById('cartItems');
+            if (!cart || cart.length === 0) {
+                container.innerHTML = '<div style="text-align:center; padding:2rem; color:var(--text-muted);">Your cart is empty</div>';
+                return;
+            }
+            container.innerHTML = cart.map(item => {
+                return `
+                    <div class="cart-item">
+                        <div style="flex:1;">
+                            <strong>${item.size} - ${item.network.toUpperCase()}</strong><br>
+                            <small class="muted">GH₵ ${(item.price * (item.quantity || 1)).toFixed(2)}</small>
+                        </div>
+                        <div style="display:flex; align-items:center; gap:8px;">
+                            <button class="btn-qty-decrease" data-id="${item.uidLocalId}" title="Decrease">-</button>
+                            <div style="min-width:30px; text-align:center; font-weight:700;">${item.quantity || 1}</div>
+                            <button class="btn-qty-increase" data-id="${item.uidLocalId}" title="Increase">+</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            // hook qty buttons
+            container.querySelectorAll('.btn-qty-decrease').forEach(b => b.addEventListener('click', (e) => {
+                const id = e.currentTarget.dataset.id;
+                updateCartQuantityById(id, -1);
+            }));
+            container.querySelectorAll('.btn-qty-increase').forEach(b => b.addEventListener('click', (e) => {
+                const id = e.currentTarget.dataset.id;
+                updateCartQuantityById(id, 1);
+            }));
+        }
+
+        function updateCartQuantityById(uidLocalId, change) {
+            const idx = cart.findIndex(c => c.uidLocalId === uidLocalId);
+            if (idx === -1) return;
+            cart[idx].quantity = Math.max(0, (cart[idx].quantity || 1) + change);
+            if (cart[idx].quantity <= 0) {
+                cart.splice(idx,1);
+            }
+            saveCartToStorage();
+            updateCartUI();
+            renderCartItems();
+        }
+
+        // -------------------------
+        // Checkout flow (Paystack)
+        // -------------------------
+        async function startCheckout() {
+            // require at least one item
+            if (!cart.length) {
+                alert('Your cart is empty');
+                return;
+            }
+
+            // ask for payer email if not logged in
+            let payerEmail = currentUser && currentUser.email ? currentUser.email : prompt('Enter your email for payment (used for receipt)', '');
+
+            if (!payerEmail) {
+                alert('Email is required for payment');
+                return;
+            }
+
+            // create a local pending transaction so the Transactions page shows it immediately
+            const localTxns = getLocalTransactions();
+            const txnId = 'ltx_' + Date.now();
+            const subtotal = cart.reduce((s,i) => s + (i.price * (i.quantity || 1)), 0);
+            const pendingRecord = {
+                id: txnId,
+                type: 'purchase',
+                status: 'pending',
+                items: JSON.parse(JSON.stringify(cart)),
+                total: subtotal,
+                email: payerEmail, // Include email for the transaction record
+                timestamp: new Date().toISOString()
+            };
+            localTxns.unshift(pendingRecord);
+            saveLocalTransactions(localTxns);
+            loadTransactions();
+            pushToast('Transaction created and pending. Opening payment...', 'info', 3500);
+
+            // prepare Paystack
+            const totalKobo = Math.round(subtotal * 100);
+            const payEmail = payerEmail;
+            const handler = PaystackPop.setup({
+                key: 'pk_live_98575428080557d261e91cb92fe745f878fc4278',
+                email: payEmail,
+                amount: totalKobo,
+                currency: 'GHS',
+                ref: 'LUXE_' + Math.floor((Math.random() * 1000000000) + 1),
+                callback: function(response) {
+                    // On success: update local txn to completed and save to Firestore (if logged)
+                    const localTxnsNow = getLocalTransactions();
+                    const idx = localTxnsNow.findIndex(t => t.id === txnId);
+                    if (idx !== -1) {
+                        localTxnsNow[idx].status = 'completed';
+                        localTxnsNow[idx].paystackRef = response.reference;
+                        localTxnsNow[idx].completedAt = new Date().toISOString();
+                        saveLocalTransactions(localTxnsNow);
+                    }
+                    // Save to remote Firestore if user logged in
+                    saveTransactionRemote(response, pendingRecord).catch(err => {
+                        console.warn('Remote save failed:', err);
+                    });
+
+                    // clear cart
+                    cart = [];
+                    saveCartToStorage();
+                    updateCartUI();
+                    renderCartItems();
+                    toggleCart();
+
+                    pushToast('Payment successful! Data bundle will be delivered within 30min-1hr.', 'success', 4500);
+                    loadTransactions();
+                },
+                onClose: function() {
+                    // mark local txn as cancelled
+                    const localTxnsNow = getLocalTransactions();
+                    const idx = localTxnsNow.findIndex(t => t.id === txnId);
+                    if (idx !== -1) {
+                        localTxnsNow[idx].status = 'cancelled';
+                        saveLocalTransactions(localTxnsNow);
+                        loadTransactions();
+                    }
+                    pushToast('Payment cancelled', 'warn', 2800);
+                }
+            });
+            handler.openIframe();
+        }
+
+        // Save transaction to Firestore if user is logged in; still create the entry with user info if available.
+        async function saveTransactionRemote(response, pendingRecord) {
+            try {
+                const transaction = {
+                    userId: currentUser ? currentUser.uid : null,
+                    userEmail: currentUser ? currentUser.email : (pendingRecord ? (pendingRecord.email || null) : null),
+                    cart: pendingRecord.items || [],
+                    total: pendingRecord.total || 0,
+                    paystackRef: response.reference,
+                    status: 'completed',
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                };
+                await db.collection('transactions').add(transaction);
+            } catch (err) {
+                console.error('Error saving transaction remote:', err);
+                throw err;
+            }
+        }
+
+        // -----------------------------
+        // Transactions display merging
+        // -----------------------------
+        async function loadTransactions() {
+            // show local transactions first (most recent)
+            const localTxns = getLocalTransactions();
+            const container = document.getElementById('transactionsList');
+            container.innerHTML = localTxns.map(t => {
+                if (t.type === 'added') {
+                    // Item added to cart (not a final purchase)
+                    return `<div class="card">
+                            <h4>Item Added to Cart</h4>
+                            <p>${t.item.size} - ${t.item.network.toUpperCase()}</p>
+                            <p>Status: <strong style="text-transform:capitalize">${t.status}</strong></p>
+                            <small class="muted">${new Date(t.timestamp).toLocaleString()}</small>
+                        </div>`;
+                } else if (t.type === 'purchase') {
+                    // Final purchase attempt (pending, completed, or cancelled)
+                    const itemsList = t.items.map(i => `${i.quantity}x ${i.size} ${i.network.toUpperCase()}`).join(', ');
+                    return `<div class="card">
+                        <h4>Order (Local) ${t.id.slice(-6)}</h4>
+                        <p style="margin-bottom: 0.5rem;"><strong>Items:</strong> ${itemsList}</p> <p>Total: GH₵ ${ (t.total || 0).toFixed ? (t.total).toFixed(2) : (Number(t.total) || 0).toFixed(2)}</p>
+                        <p>Status: <strong style="text-transform:capitalize">${t.status.replace('_', ' ')}</strong></p>
+                        <small class="muted">${new Date(t.timestamp).toLocaleString()}</small>
+                    </div>`;
+                } else {
+                    return `<div class="card"><p>Unknown txn</p></div>`;
+                }
+            }).join('');
+
+            // if user is logged in, also fetch firestore transactions and append them
+            if (currentUser) {
+                try {
+                    const snapshot = await db.collection('transactions')
+                        .where('userId', '==', currentUser.uid)
+                        .orderBy('timestamp', 'desc')
+                        .limit(10)
+                        .get();
+                    const remoteHtml = snapshot.docs.map(doc => {
+                        const data = doc.data();
+                        const itemsList = data.cart.map(i => `${i.quantity}x ${i.size} ${i.network.toUpperCase()}`).join(', ');
+                        return `
+                            <div class="card">
+                                <h4>Order #${doc.id.slice(-6)} (Confirmed)</h4>
+                                <p style="margin-bottom: 0.5rem;"><strong>Items:</strong> ${itemsList}</p> <p>Total: GH₵ ${data.total?.toFixed(2) || 0}</p>
+                                <p>Ref: ${data.paystackRef || 'N/A'}</p>
+                                <p>Status: <strong style="text-transform:capitalize">${data.status || 'N/A'}</strong></p>
+                                <small class="muted">${data.timestamp?.toDate ? data.timestamp.toDate().toLocaleString() : 'N/A'}</small>
+                            </div>
+                        `;
+                    }).join('');
+                    // append remote after local
+                    container.innerHTML = container.innerHTML + remoteHtml;
+                } catch (err) {
+                    console.warn('Could not load remote transactions:', err);
+                }
+            }
+
+            // fallback if nothing
+            if (!container.innerHTML.trim()) {
+                container.innerHTML = '<div class="card" style="text-align:center; padding:1.2rem;"><p>No transactions or orders found</p></div>';
+            }
+        }
+
+        // --------------------------
+        // Auth logic (mostly preserved from your original)
+        // --------------------------
+        function setupAuth() {
+            auth.onAuthStateChanged(user => {
+                currentUser = user;
+                if (user) {
+                    authBtns.style.display = 'none';
+                    userProfile.style.display = 'flex';
+                    loadTransactions();
+                } else {
+                    authBtns.style.display = 'flex';
+                    userProfile.style.display = 'none';
+                }
+            });
+
+            loginBtn.addEventListener('click', () => {
+                document.getElementById('authTitle').textContent = 'Login';
+                document.getElementById('toggleAuth').textContent = 'Need an account? Sign up';
+                authModal.classList.add('active');
+            });
+
+            signupBtn.addEventListener('click', () => {
+                document.getElementById('authTitle').textContent = 'Sign Up';
+                document.getElementById('toggleAuth').textContent = 'Have an account? Login';
+                authModal.classList.add('active');
+            });
+
+            document.getElementById('toggleAuth').addEventListener('click', function() {
+                const isLogin = document.getElementById('authTitle').textContent === 'Login';
+                document.getElementById('authTitle').textContent = isLogin ? 'Sign Up' : 'Login';
+                document.getElementById('toggleAuth').textContent = isLogin ? 'Have an account? Login' : 'Need an account? Sign up';
+            });
+
+            document.getElementById('authForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('email').value;
+                const password = document.getElementById('password').value;
+                const isLogin = document.getElementById('authTitle').textContent === 'Login';
+                try {
+                    if (isLogin) {
+                        await auth.signInWithEmailAndPassword(email, password);
+                    } else {
+                        await auth.createUserWithEmailAndPassword(email, password);
+                    }
+                    authModal.classList.remove('active');
+                } catch (error) {
+                    alert(error.message);
+                }
+            });
+
+            document.getElementById('logoutBtn').addEventListener('click', () => {
+                auth.signOut();
+                cart = [];
+                saveCartToStorage();
+                updateCartUI();
+            });
+        }
+
+        // --------------------------
+        // Notification UI helpers
+        // --------------------------
+        function toggleNotification() {
+            notification.classList.toggle('active');
+        }
+
+        // small public helper to create a notification and toast (used throughout)
+        function notifyUser(title, message, severity='info') {
+            // push toast
+            pushToast(message, severity === 'success' ? 'success' : (severity === 'warn' ? 'warn' : 'info'), 3500);
+            // also open the big notification for visibility when warn
+            if (severity === 'warn') {
+                notification.classList.add('active');
+                setTimeout(()=> notification.classList.remove('active'), 5000);
+            }
+        }
+
+        // Expose pushToast to global for direct button close
+        window.pushToast = pushToast;
+
+    </script>
+</body>
+</html>
